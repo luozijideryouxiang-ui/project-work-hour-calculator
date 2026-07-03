@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目工时计算器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class'};</script>
+<script>
+  if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  @keyframes fade-up { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fade-down { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes scale-in { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
+  @keyframes toast-in { 0%{opacity:0;transform:translate(-50%,-48%) scale(0.8)} 50%{transform:translate(-50%,-50%) scale(1.04)} 100%{opacity:1;transform:translate(-50%,-50%) scale(1)} }
+  @keyframes toast-out { from{opacity:1;transform:translate(-50%,-50%) scale(1)} to{opacity:0;transform:translate(-50%,-52%) scale(0.95)} }
+  @keyframes particle { 0%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)} 100%{opacity:0;transform:translate(var(--x),var(--y)) scale(0) rotate(var(--r))} }
+  @keyframes check-draw { from{stroke-dashoffset:24} to{stroke-dashoffset:0} }
+  @keyframes pop-bump { 0%{transform:scale(1)} 40%{transform:scale(1.3)} 100%{transform:scale(1)} }
+  @keyframes float-up { 0%{opacity:1;transform:translateY(0)} 100%{opacity:0;transform:translateY(-32px)} }
+
+  .animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
+  .animate-fade-down { animation: fade-down 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
+  .animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
+  .toast-show { animation: toast-in 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
+  .toast-hide { animation: toast-out 0.2s ease-in forwards; }
+  .particle { position:fixed; pointer-events:none; z-index:9999; animation: particle 0.9s cubic-bezier(0,0.7,0.3,1) forwards; }
+  .row-enter { animation: fade-up 0.35s cubic-bezier(0.16,1,0.3,1) forwards; opacity:0; }
+  .output-enter { animation: scale-in 0.45s cubic-bezier(0.16,1,0.3,1) forwards; }
+  .check-circle { stroke-dasharray:24; stroke-dashoffset:24; animation:check-draw 0.6s ease-out 0.15s forwards }
+  .pop-bump { animation: pop-bump 0.35s ease-out }
+  .quick-btn { transition: all 0.12s ease-out }
+  .quick-btn:active { transform:scale(0.8) }
+  .btn-press:active { transform:scale(0.96) }
+
+  .glass {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+  .dark .glass {
+    background: rgba(28,28,30,0.65);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+  }
+
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif; letter-spacing: -0.01em; }
+  textarea, input, button { transition: all 0.2s cubic-bezier(0.16,1,0.3,1) }
+  *, *::before, *::after { transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease }
+  .step-num { width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:12px; font-weight:700; flex-shrink:0; }
+</style>
+</head>
+<body class="min-h-screen flex items-start justify-center px-4 py-6 md:py-10 relative overflow-x-hidden bg-[#FAFAFA] dark:bg-zinc-950">
+
+<!-- Background gradient & blobs (light mode only) -->
+<div class="fixed inset-0 pointer-events-none z-0 dark:hidden"
+  style="background: linear-gradient(180deg, #EDE9FE 0%, #F0F4FF 40%, #FAFAFA 70%, #FAFAFA 100%);"></div>
+<div class="fixed -top-60 -right-40 w-[600px] h-[600px] rounded-full pointer-events-none z-0 dark:hidden"
+  style="background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, rgba(167,139,250,0.03) 50%, transparent 70%);"></div>
+<div class="fixed -bottom-40 -left-40 w-[500px] h-[500px] rounded-full pointer-events-none z-0 dark:hidden"
+  style="background: radial-gradient(circle, rgba(56,189,248,0.08) 0%, rgba(56,189,248,0.02) 50%, transparent 70%);"></div>
+
+<div class="w-full max-w-2xl relative z-10">
+  <!-- Header -->
+  <div class="text-center mb-8 animate-fade-down">
+    <div class="inline-flex items-center gap-2 mb-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide"
+      style="background:rgba(139,92,246,0.1);color:#7C3AED">
+      ⚡ 工时计算
+    </div>
+    <h1 class="text-3xl font-extrabold tracking-tight mt-2"
+      style="background:linear-gradient(135deg,#6366F1,#8B5CF6,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
+      项目工时计算器
+    </h1>
+    <p class="text-sm mt-2 text-zinc-400 dark:text-zinc-500">粘贴项目名称 · 填入天数或小时 · 一键输出</p>
+    <button onclick="startOnboarding()"
+      class="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all hover:scale-105 active:scale-95"
+      style="background:rgba(139,92,246,0.1);color:#7C3AED">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      新手指引
+    </button>
+  </div>
+
+  <!-- Steps (collapsible) -->
+  <details class="glass rounded-3xl p-5 mb-6 animate-fade-up border border-white/50 dark:border-white/10 shadow-sm">
+    <summary class="text-sm font-semibold uppercase tracking-wider cursor-pointer select-none flex items-center justify-between text-zinc-400 dark:text-zinc-500">
+      使用步骤
+      <span class="text-xs font-normal normal-case">展开</span>
+    </summary>
+    <div class="grid gap-3 mt-4">
+      <div class="flex items-start gap-3"><span class="step-num text-white" style="background:#F59E0B">1</span><div><p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">在 Excel 中填写项目编号</p><p class="text-xs mt-0.5 text-zinc-400 dark:text-zinc-500">先完成编号列，确保每个项目都有对应编号</p></div></div>
+      <div class="flex items-start gap-3"><span class="step-num text-white" style="background:#3B82F6">2</span><div><p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">从 Excel 复制项目名称列</p><p class="text-xs mt-0.5 text-zinc-400 dark:text-zinc-500">选中项目名称列 → <kbd class="px-1.5 py-0.5 rounded text-xs font-mono bg-black/5 dark:bg-white/10">⌘C</kbd> 复制</p></div></div>
+      <div class="flex items-start gap-3"><span class="step-num text-white" style="background:#6366F1">3</span><div><p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">粘贴到下方输入框</p><p class="text-xs mt-0.5 text-zinc-400 dark:text-zinc-500">自动识别每个项目，生成工时设置列表</p></div></div>
+      <div class="flex items-start gap-3"><span class="step-num text-white" style="background:#EC4899">4</span><div><p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">填写天数或小时 + 一键输出</p><p class="text-xs mt-0.5 text-zinc-400 dark:text-zinc-500">1 天按 8 小时换算；填完按 <kbd class="px-1.5 py-0.5 rounded text-xs font-mono bg-black/5 dark:bg-white/10">Enter</kbd> 自动复制</p></div></div>
+    </div>
+  </details>
+
+  <!-- Paste area -->
+  <div class="mb-5" id="sectionPaste">
+    <label class="block text-sm font-semibold mb-2.5 text-zinc-700 dark:text-zinc-200">粘贴项目名称<span class="font-normal ml-1.5 text-zinc-400 dark:text-zinc-500">每行一个</span></label>
+    <textarea id="pasteArea" oninput="autoFill()" rows="4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();focusFirstDays()}"
+      class="w-full p-5 rounded-3xl text-sm resize-none outline-none shadow-sm border-0 glass"
+      style="color:#1D1D1F;min-height:100px"
+      placeholder="项目A 品牌活动&#10;项目B 内容场&#10;项目C 店播&#10;项目D 内容场&#10;项目E 店播&#10;项目F 内容场&#10;项目G 天猫会员日&#10;项目H 品牌活动"></textarea>
+  </div>
+
+  <!-- Days rows -->
+  <div class="mb-4" id="rowsContainer" style="display:none">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">设置工时</label>
+        <button onclick="batchSetDays()" class="text-xs px-2.5 py-1 rounded-full font-medium transition-all hover:scale-105 active:scale-95" style="background:rgba(99,102,241,0.08);color:#6366F1" title="为所有项目设置相同的默认天数">全部设1天</button>
+      </div>
+      <span id="livePreview" class="text-xs font-mono hidden px-3 py-1 rounded-full" style="background:rgba(99,102,241,0.08);color:#6366F1"></span>
+    </div>
+    <div id="rows"></div>
+  </div>
+
+  <!-- Error -->
+  <div id="error" class="hidden text-sm rounded-2xl px-5 py-3.5 mb-5 animate-fade-down" style="background:rgba(239,68,68,0.08);color:#EF4444;border:1px solid rgba(239,68,68,0.15)"></div>
+
+  <!-- Main button -->
+  <div id="sectionButton">
+    <button onclick="calcAndCopy()"
+      class="btn-press w-full py-4 rounded-2xl text-white font-bold text-base tracking-wide active:scale-[0.97] shadow-lg hover:shadow-xl transition-all"
+      style="background:linear-gradient(135deg,#6366F1,#8B5CF6)">
+      计算并复制
+    </button>
+    <p class="text-center text-xs mt-2 text-zinc-400 dark:text-zinc-500">或按 <kbd class="px-1.5 py-0.5 rounded text-xs font-mono bg-black/5 dark:bg-white/10">Enter</kbd> 键</p>
+  </div>
+
+  <!-- Output -->
+  <div id="outputSection" class="mt-8 hidden">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">工时指数</span>
+      <div class="flex items-center gap-3">
+        <button id="roundToggle" onclick="toggleRounding()" class="btn-press inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400" title="打开后输出整数工时指数，减少小数位">
+          <span id="roundDot" class="inline-block w-2 h-2 rounded-full bg-zinc-300"></span>
+          四舍五入
+        </button>
+        <div class="flex items-center gap-2 text-xs font-mono" style="color:#8E8E93"><span id="itemCount">0</span> 项</div>
+      </div>
+    </div>
+    <div id="sumBanner" class="hidden flex items-center gap-2 mb-3 px-4 py-2.5 rounded-2xl text-sm font-semibold"></div>
+    <pre id="result"
+      class="p-6 rounded-3xl text-xl leading-10 font-mono whitespace-pre overflow-auto shadow-lg border-0 output-enter"
+      style="background:#1D1D1F;color:#30D158;max-height:320px"></pre>
+    <div class="flex gap-2 mt-3">
+      <button onclick="copyOutput()" class="btn-press flex-1 py-3 rounded-2xl font-semibold text-sm active:scale-[0.97] transition-all bg-black/5 dark:bg-white/10 text-zinc-700 dark:text-zinc-300">再次复制</button>
+      <button onclick="clearAll()" class="btn-press py-3 px-6 rounded-2xl font-medium text-sm active:scale-[0.97] transition-all bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400">清空</button>
+    </div>
+  </div>
+
+  <p class="text-center text-xs mt-12" style="color:#C7C7CC">数据自动保存 · 刷新不丢失 · 不会上传</p>
+  <p class="text-center mt-4 cursor-pointer select-none opacity-25 hover:opacity-55 transition-opacity duration-500"
+    style="font-size:10px;color:#C7C7CC" onclick="spawnFireworks()" title="✨ 点亮星光">用爱发电 · 发电不易 · @原创作者 默默</p>
+</div>
+
+<!-- Onboarding -->
+<div id="onboarding" class="hidden">
+  <!-- Dark overlay: box-shadow with rounded cutout -->
+  <div id="onboardRing" class="fixed z-[9990] hidden pointer-events-none"
+    style="box-shadow:0 0 0 9999px rgba(0,0,0,0.5);border-radius:20px;transition:all 0.35s cubic-bezier(0.25,0.1,0.25,1)"></div>
+  <!-- Purple glow ring -->
+  <div id="onboardGlow" class="fixed z-[9991] hidden pointer-events-none"
+    style="border:3px solid rgba(99,102,241,0.5);box-shadow:0 0 30px rgba(99,102,241,0.2);border-radius:20px;transition:all 0.35s cubic-bezier(0.25,0.1,0.25,1)"></div>
+  <div id="onboardTip" class="fixed z-[9992] glass rounded-3xl p-6 shadow-2xl border border-white/50 dark:border-white/10 text-center"
+    style="width:calc(100%-48px);max-width:340px;bottom:40px;left:50%;transform:translateX(-50%);transition:all 0.35s cubic-bezier(0.25,0.1,0.25,1)">
+    <div class="onboard-content" style="transition:all 0.2s ease-out">
+      <div class="text-3xl mb-2" id="onboardEmoji"></div>
+      <h3 class="text-lg font-bold mb-1.5 text-zinc-700 dark:text-zinc-200" id="onboardTitle"></h3>
+      <p class="text-sm mb-3" style="color:#8E8E93" id="onboardDesc"></p>
+      <div class="flex justify-center gap-1.5 mb-4" id="onboardDots"></div>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="prevOnboard()" id="onboardPrev" class="flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all bg-black/5 dark:bg-white/10 text-gray-500 dark:text-gray-400">上一步</button>
+      <button onclick="nextOnboard()" id="onboardNext" class="flex-1 py-2.5 rounded-2xl text-sm font-bold text-white transition-all" style="background:linear-gradient(135deg,#6366F1,#8B5CF6)">下一步</button>
+    </div>
+    <button onclick="closeOnboarding()" class="w-full mt-2 py-2 text-xs transition-colors hover:opacity-70" style="color:#9CA3AF">跳过教程 · 点击遮罩也可跳过</button>
+  </div>
+</div>
+
+<script>
+// ==================== STATE ====================
+const STORAGE_KEY = 'pm-calc-data';
+const ONBOARD_KEY = 'pm-calc-tutorial-v2';
+const WORK_HOURS_PER_DAY = 8;
+let rows=[],timer,onboardStep=0,onboardingActive=false;
+let roundOutputToInteger = false;
+
+// ==================== AUTO-SAVE ====================
+function save() {
+  if (onboardingActive) return; // never save demo data
+  const data = {
+    pasteText: document.getElementById('pasteArea').value,
+    rows: rows.map(r => ({ name: r.name, days: r.days, unit: r.unit || 'day' })),
+    roundOutputToInteger,
+    outputVisible: !document.getElementById('outputSection').classList.contains('hidden'),
+    resultText: document.getElementById('result').textContent,
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function restore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.pasteText) document.getElementById('pasteArea').value = data.pasteText;
+    roundOutputToInteger = !!data.roundOutputToInteger;
+    updateRoundToggle();
+    if (data.rows && data.rows.length) { rows = data.rows; render(); }
+    if (data.outputVisible && data.resultText) {
+      document.getElementById('result').textContent = data.resultText;
+      document.getElementById('outputSection').classList.remove('hidden');
+    }
+  } catch(e) {}
+}
+
+// ==================== BOOTSTRAP ====================
+let savedUserData = null; // backup before onboarding overwrites
+
+function bootstrap() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const forceTutorial = urlParams.has('tutorial');
+  if (forceTutorial) localStorage.removeItem(ONBOARD_KEY);
+
+  const hasSeenTutorial = localStorage.getItem(ONBOARD_KEY);
+  if (!hasSeenTutorial) {
+    // Backup existing user data before onboarding wipes it
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { savedUserData = JSON.parse(raw); } catch(e) {}
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    rows = [];
+    document.getElementById('pasteArea').value = '';
+    render();
+    setTimeout(startOnboarding, 400);
+  } else {
+    restore();
+    if (rows.length) { document.getElementById('pasteArea').value = rows.map(r=>r.name).join('\n'); autoFill(); }
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
+}
+
+// ==================== AUTO-FILL & RENDER ====================
+function autoFill(skipSave){
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    let t = document.getElementById('pasteArea').value.trim();
+    if (!t) { rows = []; render(skipSave); if (!skipSave) save(); return; }
+    let lines = t.split('\n').filter(l => l.trim());
+    let oldRows = {};
+    rows.forEach((r, i) => { if (r.days > 0) oldRows[r.name || '__idx_'+i] = { days: r.days, unit: r.unit || 'day' }; });
+    rows = lines.map((line, i) => {
+      let name = line.trim();
+      let old = oldRows[name] || oldRows['__idx_'+i] || {};
+      return { name, days: old.days || 0, unit: old.unit || 'day' };
+    });
+    render(skipSave); if (!skipSave) save();
+  }, 250);
+}
+
+function render(skipSave){
+  let c = document.getElementById('rowsContainer'), e = document.getElementById('rows');
+  if (rows.length === 0) { c.style.display = 'none'; document.getElementById('livePreview').classList.add('hidden'); return; }
+  c.style.display = '';
+  let delay = 35;
+  e.innerHTML = rows.map((r, i) =>
+    '<div class="row-enter flex gap-2 items-center mb-2 glass rounded-2xl p-3 border border-white/50 dark:border-white/10 shadow-sm" style="animation-delay:'+(i*delay)+'ms">'+
+    '<span class="flex-1 text-sm font-medium truncate pl-1 select-none text-zinc-700 dark:text-zinc-200">'+esc(r.name)+'</span>'+
+    '<input value="'+(r.days||'')+'" id="daysInp'+i+'" onchange="onDaysChange('+i+',this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();calcAndCopy()}" type="number" step="0.5" min="0" class="w-16 py-2.5 px-2 rounded-xl text-sm text-center outline-none border-0 shadow-sm bg-black/5 dark:bg-white/10 text-zinc-700 dark:text-zinc-200" placeholder="数量">'+
+    '<select id="unitInp'+i+'" onchange="onUnitChange('+i+',this.value)" class="w-16 py-2.5 px-2 rounded-xl text-xs font-semibold outline-none border-0 shadow-sm bg-black/5 dark:bg-white/10 text-zinc-700 dark:text-zinc-200">'+
+    '<option value="day" '+((r.unit||'day')==='day'?'selected':'')+'>天</option>'+
+    '<option value="hour" '+((r.unit||'day')==='hour'?'selected':'')+'>小时</option>'+
+    '</select>'+
+    '<button onclick="addAmount('+i+',1,\'day\')" class="quick-btn w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold transition-all flex-shrink-0" style="background:rgba(59,130,246,0.1);color:#3B82F6" title="+1天">+1</button>'+
+    '<button onclick="addAmount('+i+',0.5,\'day\')" class="quick-btn w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold transition-all flex-shrink-0" style="background:rgba(245,158,11,0.1);color:#F59E0B" title="+半天">½</button>'+
+    '<button onclick="addHour('+i+')" class="quick-btn w-8 h-8 flex items-center justify-center rounded-xl text-xs font-bold transition-all flex-shrink-0" style="background:rgba(16,185,129,0.1);color:#10B981" title="+1小时">1h</button>'+
+    '<button onclick="removeRow('+i+')" class="w-8 h-8 flex items-center justify-center rounded-xl transition-all flex-shrink-0" style="color:#C7C7CC">×</button>'+
+    '</div>'
+  ).join('');
+  updateLivePreview();
+}
+
+let undoData = null, undoHandle = 0;
+function removeRow(i) {
+  undoData = { index: i, row: rows[i] };
+  rows.splice(i, 1);
+  render(); save();
+  showUndoToast();
+  clearTimeout(undoHandle);
+  undoHandle = setTimeout(() => { undoData = null; }, 5000);
+}
+
+function showUndoToast() {
+  const t = document.getElementById('undoToast');
+  if (t) t.remove();
+  const toast = document.createElement('div');
+  toast.id = 'undoToast';
+  toast.className = 'fixed z-[9999] glass rounded-2xl px-4 py-3 shadow-xl border border-white/50 dark:border-white/10 text-sm font-medium animate-fade-up';
+  toast.style.cssText = 'bottom:24px;left:50%;transform:translateX(-50%);color:#1D1D1F';
+  toast.innerHTML = '已删除 <b>'+esc(undoData.row.name)+'</b> <button onclick="undoRemove()" class="ml-3 px-3 py-1 rounded-xl text-xs font-bold text-white" style="background:linear-gradient(135deg,#6366F1,#8B5CF6)">撤销</button>';
+  document.body.appendChild(toast);
+}
+
+function undoRemove() {
+  if (!undoData) return;
+  rows.splice(undoData.index, 0, undoData.row);
+  undoData = null;
+  render(); save();
+  const t = document.getElementById('undoToast');
+  if (t) t.remove();
+}
+
+function batchSetDays() {
+  const val = parseFloat(prompt('为所有项目设置天数：', '1'));
+  if (isNaN(val) || val < 0) return;
+  rows.forEach((r, i) => {
+    r.days = val;
+    r.unit = 'day';
+    const inp = document.getElementById('daysInp'+i);
+    const unitInp = document.getElementById('unitInp'+i);
+    if (inp) inp.value = val;
+    if (unitInp) unitInp.value = 'day';
+  });
+  updateLivePreview(); save();
+}
+
+function addAmount(i, val, unit) {
+  const currentUnit = rows[i].unit || 'day';
+  const increment = unit === 'hour' ? 1 : val * WORK_HOURS_PER_DAY;
+  const totalHours = getRowHours(rows[i]) + increment;
+  rows[i].unit = currentUnit;
+  rows[i].days = currentUnit === 'hour' ? roundWorkValue(totalHours) : roundWorkValue(totalHours / WORK_HOURS_PER_DAY);
+  const inp = document.getElementById('daysInp'+i);
+  const unitInp = document.getElementById('unitInp'+i);
+  if (unitInp) unitInp.value = rows[i].unit;
+  if (inp) {
+    inp.value = rows[i].days;
+    inp.classList.remove('pop-bump'); void inp.offsetWidth; inp.classList.add('pop-bump');
+    showFloatText(inp, '+' + (unit === 'hour' ? val + 'h' : (val === 1 ? '1' : '0.5')), unit === 'hour' ? '#10B981' : (val === 1 ? '#3B82F6' : '#F59E0B'));
+  }
+  updateLivePreview(); save();
+}
+
+function addDay(i, val) { addAmount(i, val, 'day'); }
+function addHour(i) {
+  rows[i].days = roundWorkValue((rows[i].days || 0) + (rows[i].unit === 'hour' ? 1 : 1 / WORK_HOURS_PER_DAY));
+  const inp = document.getElementById('daysInp'+i);
+  if (inp) {
+    inp.value = rows[i].days;
+    inp.classList.remove('pop-bump'); void inp.offsetWidth; inp.classList.add('pop-bump');
+    showFloatText(inp, '+1h', '#10B981');
+  }
+  updateLivePreview(); save();
+}
+
+function showFloatText(el, text, color) {
+  const rect = el.getBoundingClientRect();
+  const span = document.createElement('span');
+  span.textContent = text;
+  span.className = 'fixed z-[9998] pointer-events-none text-sm font-extrabold';
+  span.style.cssText = 'left:'+(rect.left+rect.width/2-14)+'px;top:'+(rect.top-6)+'px;color:'+color+';animation:float-up 0.8s ease-out forwards';
+  document.body.appendChild(span);
+  setTimeout(() => span.remove(), 800);
+}
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ==================== LIVE PREVIEW ====================
+function onDaysChange(i, val) { rows[i].days = Math.max(0, parseFloat(val) || 0); updateLivePreview(); save(); }
+function onUnitChange(i, val) {
+  const nextUnit = val === 'hour' ? 'hour' : 'day';
+  const totalHours = getRowHours(rows[i]);
+  rows[i].unit = nextUnit;
+  rows[i].days = nextUnit === 'hour' ? roundWorkValue(totalHours) : roundWorkValue(totalHours / WORK_HOURS_PER_DAY);
+  const inp = document.getElementById('daysInp'+i);
+  if (inp) inp.value = rows[i].days || '';
+  updateLivePreview(); save();
+}
+function getRowHours(r) { return (r.days || 0) * ((r.unit || 'day') === 'hour' ? 1 : WORK_HOURS_PER_DAY); }
+function roundWorkValue(v) { return Math.round(v * 1000) / 1000; }
+function updateRoundToggle() {
+  const toggle = document.getElementById('roundToggle');
+  const dot = document.getElementById('roundDot');
+  if (!toggle || !dot) return;
+  toggle.className = roundOutputToInteger
+    ? 'btn-press inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all text-white'
+    : 'btn-press inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-black/5 dark:bg-white/10 text-zinc-500 dark:text-zinc-400';
+  toggle.style.background = roundOutputToInteger ? 'linear-gradient(135deg,#6366F1,#8B5CF6)' : '';
+  dot.className = roundOutputToInteger ? 'inline-block w-2 h-2 rounded-full bg-white' : 'inline-block w-2 h-2 rounded-full bg-zinc-300';
+}
+function toggleRounding() {
+  roundOutputToInteger = !roundOutputToInteger;
+  updateRoundToggle();
+  if (!document.getElementById('outputSection').classList.contains('hidden')) calcAndCopy();
+  else save();
+}
+function distributeRoundedPercentages(values, integerMode) {
+  const total = values.reduce((s, v) => s + v, 0);
+  if (total <= 0) return values.map(() => 0);
+  const scale = integerMode ? 1 : 10;
+  const target = 100 * scale;
+  const raw = values.map(v => (v / total) * target);
+  const floored = raw.map(Math.floor);
+  let remaining = target - floored.reduce((s, v) => s + v, 0);
+  raw
+    .map((v, i) => ({ i, fraction: v - floored[i] }))
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach(item => {
+      if (remaining > 0) {
+        floored[item.i] += 1;
+        remaining -= 1;
+      }
+    });
+  const correction = target - floored.reduce((s, v) => s + v, 0);
+  if (correction !== 0 && floored.length) {
+    const index = floored
+      .map((v, i) => ({ v, i }))
+      .sort((a, b) => b.v - a.v)[0].i;
+    floored[index] += correction;
+  }
+  return floored.map(v => v / scale);
+}
+function updateLivePreview() {
+  const valid = rows.filter(r => r.name.trim() && r.days > 0);
+  const total = valid.reduce((s, r) => s + getRowHours(r), 0);
+  const el = document.getElementById('livePreview');
+  if (valid.length === 0 || total === 0) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = '总 '+total+' 小时 · '+valid.map(r => (r.name.length>8?r.name.slice(0,8)+'…':r.name)+' '+(getRowHours(r)/total*100).toFixed(1)+'%').join(' ⏐ ');
+}
+
+// ==================== CALCULATE ====================
+function focusFirstDays(){
+  if (rows.length === 0) return;
+  const first = document.getElementById('daysInp0');
+  if (first) { first.focus(); first.select(); }
+}
+
+function calcAndCopy(){
+  let err = document.getElementById('error'); err.classList.add('hidden');
+  document.querySelectorAll('#rows input[type=number]').forEach((inp, i) => { rows[i].days = parseFloat(inp.value) || 0; });
+  document.querySelectorAll('#rows select').forEach((sel, i) => { rows[i].unit = sel.value === 'hour' ? 'hour' : 'day'; });
+  let valid = rows.filter(r => r.name.trim() && r.days > 0);
+  if (valid.length === 0) { err.textContent = '请先粘贴项目名称，并为至少一个项目设置工时'; err.classList.remove('hidden'); return; }
+  let missing = rows.filter(r => r.name.trim() && !r.days);
+  if (missing.length > 0) { err.textContent = missing.length + ' 个项目未设置工时'; err.classList.remove('hidden'); return; }
+
+  let rnd = distributeRoundedPercentages(valid.map(r => getRowHours(r)), roundOutputToInteger);
+
+  let output = rnd.map(v => roundOutputToInteger ? String(v) : v.toFixed(1)).join('\n');
+  let finalSum = roundOutputToInteger
+    ? rnd.reduce((s, v) => s + v, 0)
+    : Math.round(rnd.reduce((s, v) => s + v, 0) * 10) / 10;
+  let ok = Math.abs(finalSum - 100) < 0.001;
+
+  let sec = document.getElementById('outputSection'); sec.classList.remove('hidden');
+  let pre = document.getElementById('result'); pre.textContent = output;
+  pre.classList.remove('output-enter'); void pre.offsetWidth; pre.classList.add('output-enter');
+
+  document.getElementById('itemCount').textContent = valid.length;
+  const banner = document.getElementById('sumBanner');
+  banner.classList.remove('hidden');
+  if (ok) {
+    banner.innerHTML = '\u2713 总和严格等于 100.0';
+    banner.style.cssText = 'background:rgba(48,209,88,0.1);color:#30D158;border:1px solid rgba(48,209,88,0.2)';
+  } else {
+    banner.innerHTML = '\u2717 总和为 ' + finalSum.toFixed(1) + '（已自动调整最后一项）';
+    banner.style.cssText = 'background:rgba(239,68,68,0.08);color:#EF4444;border:1px solid rgba(239,68,68,0.15)';
+  }
+
+  navigator.clipboard.writeText(output).then(() => { showToast(); spawnParticles(); });
+  save();
+}
+
+function copyOutput(){
+  let t = document.getElementById('result').textContent;
+  if (!t) return;
+  navigator.clipboard.writeText(t).then(() => { showToast(); spawnParticles(); });
+}
+
+function clearAll(){
+  rows = []; document.getElementById('pasteArea').value = '';
+  document.getElementById('outputSection').classList.add('hidden');
+  document.getElementById('error').classList.add('hidden');
+  document.getElementById('livePreview').classList.add('hidden');
+  document.getElementById('sumBanner').classList.add('hidden');
+  document.getElementById('rowsContainer').style.display = 'none';
+  localStorage.removeItem(STORAGE_KEY);
+  render();
+}
+
+// ==================== TOAST & PARTICLES ====================
+function showToast(){
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'fixed z-[9999] pointer-events-none'; t.style.cssText = 'top:50%;left:50%'; document.body.appendChild(t); }
+  t.innerHTML = '<div class="glass rounded-3xl px-8 py-6 shadow-2xl border border-white/50 dark:border-white/10 text-center toast-show"><svg class="w-10 h-10 mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="#30D158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle class="check-circle" cx="12" cy="12" r="10"/><path class="check-circle" d="M7 12l3.5 3.5L17 9"/></svg><div class="text-base font-bold text-zinc-700 dark:text-zinc-200">已复制到剪贴板</div><div class="text-sm mt-1 text-zinc-400 dark:text-zinc-500">回到 Excel → <kbd class="px-1.5 py-0.5 rounded text-xs font-mono bg-black/5 dark:bg-white/10">⌘V</kbd> 粘贴</div></div>';
+  let i = t.firstElementChild; i.classList.add('toast-show');
+  setTimeout(() => { i.classList.remove('toast-show'); i.classList.add('toast-hide'); setTimeout(() => t.innerHTML = '', 300); }, 2000);
+}
+
+function spawnFireworks(){
+  const colors = ['#6366F1','#8B5CF6','#A78BFA','#38BDF8','#34D399','#FB923C','#F472B6','#FACC15','#EF4444','#22D3EE'];
+  // Multiple bursts
+  for (let b = 0; b < 3; b++) {
+    setTimeout(() => {
+      const cx = 30 + Math.random() * 40; // center x (%)
+      const cy = 20 + Math.random() * 30; // center y (%)
+      for (let i = 0; i < 50; i++) {
+        const el = document.createElement('div');
+        el.className = 'particle';
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 40 + Math.random() * 250;
+        const size = 3 + Math.random() * 7;
+        const dur = 0.7 + Math.random() * 1.2;
+        el.style.cssText =
+          'left:'+cx+'%;top:'+cy+'%;'+
+          'width:'+size+'px;height:'+size+'px;'+
+          'border-radius:'+(Math.random()>0.5?'50%':'2px')+';'+
+          'background:'+colors[Math.floor(Math.random()*colors.length)]+';'+
+          '--x:'+Math.cos(angle)*dist+'px;'+
+          '--y:'+Math.sin(angle)*dist+'px;'+
+          '--r:'+(Math.random()-0.5)*720+'deg;'+
+          'animation-duration:'+dur+'s;'+
+          'animation-delay:'+Math.random()*0.1+'s';
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 1500);
+      }
+    }, b * 300);
+  }
+}
+
+function spawnParticles(){
+  let colors = ['#6366F1','#8B5CF6','#A78BFA','#38BDF8','#34D399','#FB923C','#F472B6','#FACC15'];
+  for (let i = 0; i < 28; i++) {
+    let e = document.createElement('div'); e.className = 'particle';
+    let s = 4 + Math.random() * 8, a = Math.random() * Math.PI * 2, d = 70 + Math.random() * 220;
+    e.style.cssText = 'left:50%;top:40%;width:'+s+'px;height:'+s+'px;border-radius:'+(Math.random()>0.5?'50%':'3px')+';background:'+colors[Math.floor(Math.random()*colors.length)]+';--x:'+Math.cos(a)*d+'px;--y:'+Math.sin(a)*d+'px;--r:'+(Math.random()-0.5)*360+'deg;animation-delay:'+Math.random()*0.2+'s';
+    document.body.appendChild(e); setTimeout(() => e.remove(), 1100);
+  }
+}
+
+// ==================== ONBOARDING ====================
+const onboardSteps = [
+  { emoji:'👋', title:'欢迎使用', desc:'帮你从 Excel 数据一键生成工时指数', target:null, pos:'center' },
+  { emoji:'📋', title:'粘贴项目名称', desc:'从 Excel 复制项目名称列 → 粘贴到这里', target:'pasteArea', pos:'above' },
+  { emoji:'🔢', title:'填写工作量', desc:'每个项目可填天数或小时。1 天按 8 小时换算', target:'rowsContainer', pos:'above' },
+  { emoji:'✨', title:'计算并复制', desc:'按 Enter 或点击按钮 → 结果进剪贴板', target:'sectionButton', pos:'above' },
+];
+
+function renderDots() {
+  document.getElementById('onboardDots').innerHTML = onboardSteps.map((_,i) =>
+    '<span class="inline-block w-2 h-2 rounded-full transition-all duration-300" style="background:'+(i===onboardStep?'#6366F1':'#D1D5DB')+'"></span>'
+  ).join('');
+}
+
+function positionSpotlight(targetId) {
+  const ring = document.getElementById('onboardRing');
+  const glow = document.getElementById('onboardGlow');
+
+  if (!targetId) {
+    ring.classList.add('hidden'); glow.classList.add('hidden');
+    return;
+  }
+
+  const el = document.getElementById(targetId);
+  if (!el) {
+    ring.classList.add('hidden'); glow.classList.add('hidden');
+    return;
+  }
+
+  const r = el.getBoundingClientRect();
+  const p = 8;
+  const wasHidden = ring.classList.contains('hidden');
+
+  // box-shadow creates full-screen dark overlay with rounded cutout
+  ring.classList.remove('hidden');
+  ring.style.top = (r.top - p) + 'px';
+  ring.style.left = (r.left - p) + 'px';
+  ring.style.width = (r.width + p * 2) + 'px';
+  ring.style.height = (r.height + p * 2) + 'px';
+  if (wasHidden) {
+    ring.style.opacity = '0';
+    requestAnimationFrame(() => { ring.style.opacity = '1'; ring.style.transition = 'opacity 0.25s ease-out'; });
+  }
+
+  glow.classList.remove('hidden');
+  glow.style.top = (r.top - p) + 'px';
+  glow.style.left = (r.left - p) + 'px';
+  glow.style.width = (r.width + p * 2) + 'px';
+  glow.style.height = (r.height + p * 2) + 'px';
+  if (wasHidden) {
+    glow.style.opacity = '0';
+    requestAnimationFrame(() => { glow.style.opacity = '1'; glow.style.transition = 'opacity 0.25s ease-out'; });
+  }
+
+  const s = onboardSteps[onboardStep];
+  positionTooltip(s.target, s.pos);
+}
+
+function positionTooltip(targetId, pos) {
+  const tip = document.getElementById('onboardTip');
+  const tw = 340;
+  const th = 200;
+
+  if (!targetId || pos === 'center') {
+    tip.style.top = '50%'; tip.style.bottom = 'auto';
+    tip.style.left = '50%'; tip.style.transform = 'translate(-50%,-50%)';
+    return;
+  }
+
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const pad = 20;
+
+  // Center horizontally, clamp to screen
+  tip.style.left = Math.max(16, Math.min(window.innerWidth - tw - 16, r.left + r.width/2 - tw/2)) + 'px';
+
+  // Try below the target first, then above
+  if (r.bottom + pad + th < window.innerHeight - 16) {
+    tip.style.top = (r.bottom + pad) + 'px';
+    tip.style.bottom = 'auto';
+  } else if (r.top - pad - th > 16) {
+    tip.style.top = 'auto';
+    tip.style.bottom = (window.innerHeight - r.top + pad) + 'px';
+  } else {
+    // Fallback: center vertically
+    tip.style.top = Math.max(16, (window.innerHeight - th) / 2) + 'px';
+    tip.style.bottom = 'auto';
+  }
+  tip.style.transform = 'none';
+}
+
+function startOnboarding() {
+  onboardStep = 0; onboardingActive = true;
+  const onboarding = document.getElementById('onboarding');
+  onboarding.classList.remove('hidden');
+  onboarding.style.opacity = '0';
+  requestAnimationFrame(() => {
+    onboarding.style.opacity = '1';
+    onboarding.style.transition = 'opacity 0.25s cubic-bezier(0.25,0.1,0.25,1)';
+  });
+  document.body.style.overflow = 'hidden';
+  // Pre-fill demo data (don't save to localStorage)
+  document.getElementById('pasteArea').value = '项目A 品牌活动\n项目B 内容场\n项目C 店播\n项目D 内容场\n项目E 店播';
+  autoFill(true); // skipSave
+  setTimeout(() => {
+    rows.forEach((r, i) => { r.days = [5, 3, 4, 2, 1][i] || 0; });
+    render(true); // skipSave
+    renderDots(); showStep();
+  }, 500);
+}
+
+function showStep() {
+  const s = onboardSteps[onboardStep];
+  const tip = document.getElementById('onboardTip');
+  const content = tip.querySelector('.onboard-content');
+
+  // Apple-style crossfade: fade out → update → fade in
+  content.style.opacity = '0';
+  content.style.transform = 'translateY(4px)';
+  content.style.transition = 'all 0.2s cubic-bezier(0.25,0.1,0.25,1)';
+
+  setTimeout(() => {
+    document.getElementById('onboardEmoji').textContent = s.emoji;
+    document.getElementById('onboardTitle').textContent = s.title;
+    document.getElementById('onboardDesc').textContent = s.desc;
+    document.getElementById('onboardPrev').style.display = onboardStep === 0 ? 'none' : '';
+    document.getElementById('onboardNext').textContent = onboardStep === onboardSteps.length - 1 ? '开始使用' : '下一步';
+    renderDots();
+    content.style.opacity = '1';
+    content.style.transform = 'translateY(0)';
+  }, 200);
+
+  // Scroll target into view then show spotlight
+  if (s.target) {
+    const el = document.getElementById(s.target);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  setTimeout(() => {
+    positionSpotlight(s.target);
+  }, s.target ? 400 : 50);
+}
+
+function nextOnboard() {
+  if (onboardStep >= onboardSteps.length - 1) { closeOnboarding(); return; }
+  onboardStep++; showStep();
+}
+function prevOnboard() {
+  if (onboardStep <= 0) return;
+  onboardStep--; showStep();
+}
+function closeOnboarding() {
+  const ring = document.getElementById('onboardRing');
+  const glow = document.getElementById('onboardGlow');
+  const tip = document.getElementById('onboardTip');
+  ring.style.opacity = '0'; ring.style.transition = 'opacity 0.2s ease-out';
+  glow.style.opacity = '0'; glow.style.transition = 'opacity 0.2s ease-out';
+  tip.style.opacity = '0'; tip.style.transition = 'opacity 0.2s ease-out';
+  const onboarding = document.getElementById('onboarding');
+  onboarding.style.opacity = '0';
+  onboarding.style.transition = 'opacity 0.2s ease-out';
+
+  setTimeout(() => {
+    onboarding.classList.add('hidden'); onboarding.style.opacity = '';
+    ring.classList.add('hidden'); ring.style.opacity = '';
+    glow.classList.add('hidden'); glow.style.opacity = '';
+    tip.style.opacity = '';
+    document.body.style.overflow = '';
+    localStorage.setItem(ONBOARD_KEY, '1');
+    onboardingActive = false;
+
+    // Restore backed-up user data if available, otherwise clear demo data
+    if (savedUserData && savedUserData.rows && savedUserData.rows.length) {
+      rows = savedUserData.rows;
+      document.getElementById('pasteArea').value = savedUserData.pasteText || rows.map(r=>r.name).join('\n');
+      render();
+      if (savedUserData.outputVisible && savedUserData.resultText) {
+        document.getElementById('result').textContent = savedUserData.resultText;
+        document.getElementById('outputSection').classList.remove('hidden');
+      }
+      save();
+    } else {
+      document.getElementById('pasteArea').value = '';
+      rows = [];
+      render();
+      document.getElementById('outputSection').classList.add('hidden');
+      document.getElementById('livePreview').classList.add('hidden');
+      document.getElementById('error').classList.add('hidden');
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, 220);
+}
+</script>
+</body>
+</html>
